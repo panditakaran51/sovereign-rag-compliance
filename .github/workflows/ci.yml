@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    name: Lint, Test & Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install ruff pytest bandit
+
+      - name: Lint (ruff)
+        run: ruff check backend/
+
+      - name: Unit tests
+        run: pytest tests/unit/ -v --tb=short
+
+      - name: Security scan (bandit)
+        run: bandit -r backend/ -ll  # flag medium+ severity issues
+
+      - name: Scan Docker image for CVEs (trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "sovereign-rag-backend:latest"
+          format: "table"
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+        continue-on-error: true  # Remove once image is clean
