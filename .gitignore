@@ -39,3 +39,7 @@ infra/terraform/*.tfvars
 # OS
 .DS_Store
 Thumbs.db
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
