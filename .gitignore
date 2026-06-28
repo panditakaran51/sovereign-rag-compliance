@@ -20,6 +20,7 @@ docs/regulations/*.pdf
 
 # Database / Vector store data
 qdrant_storage/
+data/
 *.db
 *.sqlite
 
