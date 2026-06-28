@@ -6,40 +6,112 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel in-progress runs for the same branch so fast-follows don't queue up
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  quality:
-    name: Lint, Test & Scan
+
+  lint:
+    name: Lint (ruff)
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"
+          cache: pip
 
-      - name: Install dependencies
-        run: |
-          pip install -r backend/requirements.txt
-          pip install ruff pytest bandit
+      - name: Install ruff
+        run: pip install ruff==0.8.*
 
-      - name: Lint (ruff)
+      - name: Check style and correctness
         run: ruff check backend/
 
-      - name: Unit tests
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run unit tests
         run: pytest tests/unit/ -v --tb=short
 
-      - name: Security scan (bandit)
-        run: bandit -r backend/ -ll  # flag medium+ severity issues
+  integration-tests:
+    name: Integration Tests (API contract)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Scan Docker image for CVEs (trivy)
-        uses: aquasecurity/trivy-action@master
+      - uses: actions/setup-python@v5
         with:
-          image-ref: "sovereign-rag-backend:latest"
-          format: "table"
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run integration tests
+        # -m "not requires_services" skips any test marked as needing live Ollama/Qdrant
+        run: pytest tests/integration/ -v --tb=short -m "not requires_services"
+
+  security:
+    name: Security Scan (bandit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install bandit
+        run: pip install bandit==1.8.*
+
+      - name: Scan for medium+ severity issues
+        # B104: binding to 0.0.0.0 is intentional in Docker (not a finding)
+        run: bandit -r backend/ -ll --skip B104
+
+  docker-build:
+    name: Docker Build & CVE Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        run: docker build -f backend/Dockerfile -t sovereign-rag-backend:ci .
+
+      - name: Build frontend image
+        run: docker build -f frontend/Dockerfile -t sovereign-rag-frontend:ci ./frontend
+
+      - name: Scan backend for critical/high CVEs (trivy)
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: sovereign-rag-backend:ci
+          format: table
+          severity: CRITICAL,HIGH
           exit-code: "1"
-          severity: "CRITICAL,HIGH"
-        continue-on-error: true  # Remove once image is clean
+        continue-on-error: true   # informational until base image is hardened
+
+      - name: Scan frontend for critical/high CVEs (trivy)
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: sovereign-rag-frontend:ci
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+        continue-on-error: true
