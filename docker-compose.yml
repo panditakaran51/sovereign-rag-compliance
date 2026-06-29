@@ -13,7 +13,7 @@
 #   # Ingest documents (put PDFs in docs/regulations/ first):
 #   docker exec sovereign-rag-backend python scripts/ingest.py --corpus docs/regulations/
 #   # Open browser:
-#   open http://localhost:8501
+#   open http://localhost:3000
 
 version: "3.9"
 
@@ -94,14 +94,14 @@ services:
       dockerfile: Dockerfile
     container_name: sovereign-rag-frontend
     ports:
-      - "8501:8501"                  # only externally accessible service
+      - "3000:80"                    # only externally accessible service
     networks:
       - sovereign-net
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8501/"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
       interval: 30s
       timeout: 5s
       start_period: 15s
